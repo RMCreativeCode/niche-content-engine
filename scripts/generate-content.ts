@@ -87,7 +87,8 @@ ${authorLine}
 - Keep intros short (2-3 sentences max). Hook + why it matters. Do not summarize what you're about to write.
 - Use H2 for main sections, H3 for subsections. Bold key terms and product names.
 - Mix sentence lengths deliberately: short punchy sentences for key points, longer ones for explanation.
-- Aim for 1,500-2,500 words for guides and articles, 1,000-1,500 for focused how-tos.
+- Aim for 2,000-3,000 words for guides and articles, 1,500-2,000 for focused how-tos. Longer is better — thin content ranks poorly.
+- Every H2 section should be substantive: 150-300 words minimum per section. Do not write one-sentence sections.
 
 **Markdown formatting rules:**
 - DO NOT include the article title as H1 — it's rendered separately by the page template.

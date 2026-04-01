@@ -36,8 +36,6 @@ function FaqSection({ items }: { items: FaqItem[] }) {
   );
 }
 
-// Strip the markdown FAQ section — we render it via FaqSection instead,
-// which uses structured <details> elements and proper schema data.
 function stripMarkdownFaq(md: string): string {
   return md.replace(/\n*^##\s+Frequently Asked Questions[\s\S]*$/im, '').trimEnd();
 }
@@ -54,7 +52,14 @@ export function ArticleRenderer({ article, site }: ArticleRendererProps) {
 
   return (
     <article>
-      <div className="prose prose-gray max-w-none">
+      <div className="prose prose-lg prose-gray max-w-none
+        prose-headings:font-bold prose-headings:text-gray-900
+        prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:pb-2 prose-h2:border-b prose-h2:border-gray-100
+        prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+        prose-p:leading-relaxed prose-p:text-gray-700
+        prose-li:text-gray-700 prose-li:leading-relaxed
+        prose-strong:text-gray-900
+        prose-a:no-underline hover:prose-a:underline">
         <ReactMarkdown
           components={{
             h2: ({ children, ...props }) => (

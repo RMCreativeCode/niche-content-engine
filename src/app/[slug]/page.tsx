@@ -126,22 +126,33 @@ export default async function ArticlePage({ params }: Props) {
         <div className="flex gap-8">
           {/* Main content */}
           <div className="flex-1 min-w-0">
-            <header className="mb-8">
-              <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-primary)' }}>
+            <header className="mb-10 pb-8 border-b border-gray-100">
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-primary)' }}>
                 {article.content_type}
               </span>
-              <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mt-2">
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mt-3 leading-tight">
                 {article.title}
               </h1>
-              {article.published_at && (
-                <time className="text-sm text-gray-500 mt-2 block" dateTime={article.published_at}>
-                  {new Date(article.published_at).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </time>
+              {article.meta_description && (
+                <p className="text-lg text-gray-500 mt-3 leading-relaxed">
+                  {article.meta_description}
+                </p>
               )}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-sm text-gray-500">
+                {site.author_persona && (
+                  <span className="font-medium text-gray-700">
+                    By {site.author_persona.split(',')[0]}
+                  </span>
+                )}
+                {article.published_at && (
+                  <time dateTime={article.published_at}>
+                    {new Date(article.published_at).toLocaleDateString('en-US', {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                    })}
+                  </time>
+                )}
+                <span>{Math.ceil(article.content_md.split(/\s+/).length / 200)} min read</span>
+              </div>
             </header>
 
             <ArticleRenderer article={articleWithLinks} site={site} />
