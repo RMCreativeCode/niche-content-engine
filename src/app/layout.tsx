@@ -8,12 +8,31 @@ export async function generateMetadata(): Promise<Metadata> {
   const site = await getCurrentSite();
   if (!site) return { title: 'Site Not Found' };
 
+  const siteUrl = `https://${site.domain}`;
+
   return {
     title: {
       default: site.name,
       template: `%s | ${site.name}`,
     },
-    description: site.description,
+    description: site.description ?? site.tagline,
+    metadataBase: new URL(siteUrl),
+    openGraph: {
+      siteName: site.name,
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary_large_image',
+    },
+    icons: {
+      icon: '/favicon.svg',
+      shortcut: '/favicon.svg',
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
   };
 }
 
