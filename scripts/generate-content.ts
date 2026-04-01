@@ -46,6 +46,12 @@ interface Site {
   name: string;
   description: string;
   slug: string;
+  author_persona: string | null;
+}
+
+interface FaqItem {
+  question: string;
+  answer: string;
 }
 
 interface GeneratedArticle {
@@ -56,23 +62,45 @@ interface GeneratedArticle {
   meta_keywords: string[];
   content_type: string;
   schema_type: string;
+  faq_items: FaqItem[];
 }
 
 function buildSystemPrompt(site: Site): string {
-  return `You are an expert content writer for "${site.name}" — ${site.description}.
+  const authorLine = site.author_persona
+    ? `You write as ${site.author_persona}. Use first-person ("I've found...", "In my experience...", "I tested...") where it adds credibility — not in every sentence, but where it sounds like a real practitioner sharing knowledge.`
+    : `Write as an experienced practitioner in this niche, not a generalist summarizing the internet. Use first-person occasionally ("I've found...", "In my testing...") to signal real experience.`;
 
-Your job is to write high-quality, SEO-optimized articles that are genuinely helpful to readers. Follow these rules:
+  return `You are a content writer for "${site.name}" — ${site.description}.
 
-1. Write in a knowledgeable but approachable tone. You're an expert talking to an enthusiast.
-2. Use markdown formatting: H2 and H3 headings, bullet lists where appropriate, bold for emphasis.
-3. Include practical, actionable advice — not just general information.
-4. Naturally mention specific products, brands, or tools where relevant (these will have affiliate links added later).
-5. Aim for 1,200-2,000 words for standard articles, 800-1,200 for focused how-tos.
-6. Include a brief intro paragraph and a conclusion/summary section.
-7. DO NOT include the article title as an H1 — it's rendered separately.
-8. DO NOT include "In this article..." or "Let's dive in" filler phrases.
-9. Vary your sentence structure and paragraph length. Avoid being formulaic.
-10. If the topic involves safety considerations, always include them.`;
+${authorLine}
+
+## VOICE AND QUALITY STANDARDS
+
+**Be specific and opinionated:**
+- Name actual products with model numbers. "The Reef Octopus Classic 110-SSS (~$130)" beats "a mid-range skimmer".
+- Take positions. "Avoid X because Y" is more useful than "some hobbyists prefer X while others prefer Y".
+- Include concrete numbers: dimensions, flow rates, wattage, timeframes, prices (add "at time of writing").
+- Include at least one counter-intuitive or non-obvious insight that only someone with real experience would know.
+
+**Structure for search and readability:**
+- If the title is a question or how-to, open with a Quick Answer blockquote: \`> **Quick Answer:** [2-3 sentence direct answer]\`
+- Keep intros short (2-3 sentences max). Hook + why it matters. Do not summarize what you're about to write.
+- Use H2 for main sections, H3 for subsections. Bold key terms and product names.
+- Mix sentence lengths deliberately: short punchy sentences for key points, longer ones for explanation.
+- Aim for 1,500-2,500 words for guides and articles, 1,000-1,500 for focused how-tos.
+
+**Markdown formatting rules:**
+- DO NOT include the article title as H1 — it's rendered separately by the page template.
+- DO NOT use horizontal rules (---) as section dividers.
+
+## STRICTLY BANNED PHRASES
+Never use any of these — they are AI fingerprints that damage credibility and rankings:
+"delve into", "dive into", "tapestry", "it's worth noting", "it is worth noting",
+"it's important to note", "in conclusion", "let's explore", "crucial", "realm",
+"landscape", "game-changer", "comprehensive overview", "foster", "navigate the",
+"in today's world", "as we explore", "a testament to", "moreover", "furthermore",
+"in summary", "ensuring that", "it is important to", "plays a crucial role",
+"when it comes to", "take your [x] to the next level"`;
 }
 
 function buildArticlePrompt(topic: string, params: Record<string, unknown>): string {
@@ -95,27 +123,33 @@ function buildArticlePrompt(topic: string, params: Record<string, unknown>): str
   }
 
   parts.push(`
+## FAQ SECTION (REQUIRED)
+End the article with an "## Frequently Asked Questions" H2 section. Write 5-7 questions that real people search for related to this topic. Keep answers concise (2-4 sentences each). These questions will be used for FAQPage structured data in Google Search.
+
 Respond with a JSON object (no markdown code fence around it) with these exact keys:
 {
-  "title": "The article title (compelling, includes primary keyword)",
+  "title": "The article title (compelling, includes primary keyword, under 65 characters)",
   "slug": "url-friendly-slug-with-dashes",
-  "content_md": "The full article in markdown",
+  "content_md": "The full article in markdown, including the FAQ section at the end",
   "meta_description": "150-160 character meta description for SEO",
-  "meta_keywords": ["keyword1", "keyword2", "keyword3"],
+  "meta_keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "content_type": "article|guide|how-to|listicle",
-  "schema_type": "Article|HowTo|FAQPage"
-}`);
+  "schema_type": "Article|HowTo|FAQPage",
+  "faq_items": [
+    {"question": "Full question text?", "answer": "Concise 2-4 sentence answer."}
+  ]
+}
+
+The faq_items array must have 5-7 items. schema_type should be "FAQPage" whenever faq_items are present.`);
 
   return parts.join('\n\n');
 }
 
 function parseArticleResponse(text: string): GeneratedArticle | null {
   try {
-    // Try to parse the entire response as JSON
     const parsed = JSON.parse(text);
     return parsed as GeneratedArticle;
   } catch {
-    // Try to extract JSON from the response (Claude sometimes wraps it)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -131,7 +165,6 @@ function parseArticleResponse(text: string): GeneratedArticle | null {
 async function processQueueItem(item: QueueItem, site: Site, runId: string): Promise<boolean> {
   console.log(`  Processing: "${item.topic}" for ${site.name}`);
 
-  // Mark as processing
   await supabase
     .from('content_queue')
     .update({ status: 'processing' })
@@ -163,10 +196,10 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       console.log(`  [DRY RUN] Would write article: "${article.title}"`);
       console.log(`  Slug: ${article.slug}`);
       console.log(`  Words: ~${article.content_md.split(/\s+/).length}`);
+      console.log(`  FAQ items: ${article.faq_items?.length ?? 0}`);
       return true;
     }
 
-    // Check for duplicate slug
     const { data: existing } = await supabase
       .from('articles')
       .select('id')
@@ -178,7 +211,6 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       ? `${article.slug}-${Date.now().toString(36)}`
       : article.slug;
 
-    // Write to articles table
     const { error: insertError } = await supabase.from('articles').insert({
       site_id: item.site_id,
       slug: finalSlug,
@@ -187,8 +219,9 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       meta_description: article.meta_description,
       meta_keywords: article.meta_keywords,
       content_type: article.content_type || 'article',
-      schema_type: article.schema_type || 'Article',
-      status: 'review', // Goes to review, not directly published
+      schema_type: article.faq_items?.length ? 'FAQPage' : (article.schema_type || 'Article'),
+      faq_items: article.faq_items || [],
+      status: 'review',
       cluster_id: (item.prompt_params.cluster_id as string) || null,
     });
 
@@ -196,26 +229,22 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       throw new Error(`DB insert failed: ${insertError.message}`);
     }
 
-    // Mark queue item as published
     await supabase
       .from('content_queue')
       .update({ status: 'published', completed_at: new Date().toISOString() })
       .eq('id', item.id);
 
-    // Calculate approximate cost (Claude Sonnet input/output pricing)
     const inputTokens = response.usage.input_tokens;
     const outputTokens = response.usage.output_tokens;
-    // Sonnet: $3/M input, $15/M output (approximate)
     const costCents = Math.ceil((inputTokens * 0.3 + outputTokens * 1.5) / 100);
 
-    // Update pipeline run stats
     await supabase.rpc('increment_pipeline_stats', {
       run_id: runId,
       succeeded_delta: 1,
       cost_delta: costCents,
     });
 
-    console.log(`  ✓ Created: "${article.title}" (${finalSlug})`);
+    console.log(`  ✓ Created: "${article.title}" (${finalSlug}) — ${article.faq_items?.length ?? 0} FAQs`);
     return true;
 
   } catch (error) {
@@ -227,7 +256,6 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       .update({ status: 'failed', error_message: errMsg })
       .eq('id', item.id);
 
-    // Update pipeline run failure count
     await supabase.rpc('increment_pipeline_stats', {
       run_id: runId,
       failed_delta: 1,
@@ -242,7 +270,6 @@ async function main() {
   console.log(`\n🚀 Content Pipeline — ${new Date().toISOString()}`);
   console.log(`Batch size: ${BATCH_SIZE} | Dry run: ${DRY_RUN}\n`);
 
-  // Create a pipeline run record
   const { data: run, error: runError } = await supabase
     .from('pipeline_runs')
     .insert({ status: 'running' })
@@ -256,7 +283,6 @@ async function main() {
 
   const startTime = Date.now();
 
-  // Fetch pending queue items
   const { data: queueItems, error: fetchError } = await supabase
     .from('content_queue')
     .select('*')
@@ -290,22 +316,19 @@ async function main() {
 
   console.log(`Found ${queueItems.length} items to process\n`);
 
-  // Update attempted count
   await supabase
     .from('pipeline_runs')
     .update({ articles_attempted: queueItems.length })
     .eq('id', run.id);
 
-  // Group items by site_id and prefetch site data
   const siteIds = [...new Set(queueItems.map((item) => item.site_id))];
   const { data: sites } = await supabase
     .from('sites')
-    .select('id, name, description, slug')
+    .select('id, name, description, slug, author_persona')
     .in('id', siteIds);
 
   const siteMap = new Map((sites || []).map((s) => [s.id, s]));
 
-  // Process items sequentially (to avoid rate limits)
   let succeeded = 0;
   let failed = 0;
 
@@ -321,13 +344,11 @@ async function main() {
     if (success) succeeded++;
     else failed++;
 
-    // Small delay between API calls to be respectful
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   const durationSeconds = Math.round((Date.now() - startTime) / 1000);
 
-  // Finalize pipeline run
   await supabase
     .from('pipeline_runs')
     .update({

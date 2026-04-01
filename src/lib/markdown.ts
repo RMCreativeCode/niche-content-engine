@@ -1,4 +1,4 @@
-import { Article, Site } from '@/types/database';
+import { Article, FaqItem, Site } from '@/types/database';
 
 // Generate table of contents from markdown headings
 export function extractToc(markdown: string): { id: string; text: string; level: number }[] {
@@ -87,13 +87,25 @@ export function generateJsonLd(
         name: article.title,
         description: article.meta_description,
       };
-    case 'FAQPage':
+    case 'FAQPage': {
+      const faqs: FaqItem[] = Array.isArray(article.faq_items) ? article.faq_items : [];
       return {
         ...base,
         '@type': 'FAQPage',
         name: article.title,
         description: article.meta_description,
+        ...(faqs.length > 0 && {
+          mainEntity: faqs.map((item) => ({
+            '@type': 'Question',
+            name: item.question,
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: item.answer,
+            },
+          })),
+        }),
       };
+    }
     case 'Product':
       return {
         ...base,

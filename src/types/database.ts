@@ -8,6 +8,7 @@ export interface Site {
   theme_config: ThemeConfig;
   affiliate_config: AffiliateConfig;
   analytics_config: AnalyticsConfig;
+  author_persona: string | null;
   status: 'active' | 'draft' | 'paused';
   created_at: string;
   updated_at: string;
@@ -53,6 +54,11 @@ export interface Cluster {
   created_at: string;
 }
 
+export interface FaqItem {
+  question: string;
+  answer: string;
+}
+
 export interface Article {
   id: string;
   site_id: string;
@@ -60,6 +66,7 @@ export interface Article {
   slug: string;
   title: string;
   content_md: string;
+  faq_items: FaqItem[];
   meta_description: string;
   meta_keywords: string[];
   content_type: 'article' | 'comparison' | 'guide' | 'how-to' | 'listicle';
