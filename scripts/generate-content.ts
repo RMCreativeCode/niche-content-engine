@@ -222,7 +222,8 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       content_type: article.content_type || 'article',
       schema_type: article.faq_items?.length ? 'FAQPage' : (article.schema_type || 'Article'),
       faq_items: article.faq_items || [],
-      status: 'review',
+      status: 'published',
+      published_at: new Date().toISOString(),
       cluster_id: (item.prompt_params.cluster_id as string) || null,
     });
 
