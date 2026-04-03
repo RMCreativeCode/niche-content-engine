@@ -25,10 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: 'summary_large_image',
     },
-    icons: {
-      icon: '/favicon.svg',
-      shortcut: '/favicon.svg',
-    },
+    // icon.tsx / apple-icon.tsx handle per-site favicons automatically
     robots: {
       index: true,
       follow: true,

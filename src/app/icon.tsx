@@ -1,14 +1,31 @@
 import { ImageResponse } from 'next/og';
-import { getCurrentSite } from '@/lib/site-context';
+import { headers } from 'next/headers';
+import { createServerClient } from '@/lib/supabase/server';
 
 export const size = { width: 32, height: 32 };
 export const contentType = 'image/png';
 
-// Dynamic — must read request headers to resolve the site
+// Dynamic — resolves site from host header directly (middleware skips .png routes)
 export const dynamic = 'force-dynamic';
 
 export default async function Icon() {
-  const site = await getCurrentSite();
+  // Read host directly — middleware doesn't run for .png routes so we can't
+  // rely on x-site-id / x-hostname headers being set
+  const headersList = await headers();
+  const rawHost = headersList.get('host')?.split(':')[0] ?? '';
+  const hostname = rawHost.startsWith('www.') ? rawHost.slice(4) : rawHost;
+
+  let site = null;
+  if (hostname) {
+    const supabase = createServerClient();
+    const { data } = await supabase
+      .from('sites')
+      .select('name, theme_config')
+      .eq('domain', hostname)
+      .eq('status', 'active')
+      .single();
+    site = data;
+  }
 
   const primary = site?.theme_config?.primaryColor ?? '#0ea5e9';
   const accent = site?.theme_config?.accentColor ?? primary;
