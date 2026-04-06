@@ -246,6 +246,15 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       cost_delta: costCents,
     });
 
+    // Bust ISR cache so the article and homepage appear immediately
+    const revalidateSecret = process.env.REVALIDATION_SECRET;
+    const siteUrl = `https://${site.domain}`;
+    if (revalidateSecret) {
+      await fetch(`${siteUrl}/api/revalidate?token=${revalidateSecret}&path=/${finalSlug}`, {
+        method: 'POST',
+      }).catch(() => {}); // non-fatal
+    }
+
     console.log(`  ✓ Created: "${article.title}" (${finalSlug}) — ${article.faq_items?.length ?? 0} FAQs`);
     return true;
 
