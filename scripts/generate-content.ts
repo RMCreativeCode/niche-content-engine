@@ -372,6 +372,108 @@ async function main() {
     .eq('id', run.id);
 
   console.log(`\n✅ Pipeline complete: ${succeeded} succeeded, ${failed} failed (${durationSeconds}s)`);
+
+  // Auto-refill: for any active site with fewer than MIN_QUEUE_DEPTH pending items,
+  // ask Claude to generate new topics based on what's already been written.
+  await refillQueues();
+}
+
+const MIN_QUEUE_DEPTH = 5;   // refill when a site drops below this
+const REFILL_TARGET  = 10;   // topics to add when refilling
+
+async function refillQueues() {
+  const { data: allSites } = await supabase
+    .from('sites')
+    .select('id, name, description, slug, domain')
+    .eq('status', 'active');
+
+  if (!allSites?.length) return;
+
+  for (const site of allSites) {
+    // Count pending items for this site
+    const { count } = await supabase
+      .from('content_queue')
+      .select('id', { count: 'exact', head: true })
+      .eq('site_id', site.id)
+      .eq('status', 'pending');
+
+    if ((count ?? 0) >= MIN_QUEUE_DEPTH) continue;
+
+    console.log(`\n🔄 Refilling queue for ${site.name} (${count ?? 0} pending)...`);
+
+    // Fetch existing article titles to avoid duplicates
+    const { data: existing } = await supabase
+      .from('articles')
+      .select('title')
+      .eq('site_id', site.id)
+      .eq('status', 'published');
+
+    const existingTitles = (existing || []).map((a) => a.title).join('\n- ');
+
+    const prompt = `You are a content strategist for "${site.name}" — ${site.description}.
+
+Articles already published (do not duplicate these topics):
+- ${existingTitles || 'none yet'}
+
+Generate exactly ${REFILL_TARGET} new article topic ideas for this site. Each topic should:
+- Target a specific long-tail search query (how-to, comparison, or guide format)
+- Be distinct from existing articles
+- Have clear affiliate or informational value for the niche
+
+Return ONLY a valid JSON array of objects, no other text:
+[
+  {
+    "topic": "Full article topic as a complete sentence or question",
+    "content_type": "guide|how-to|listicle|comparison|article",
+    "target_keywords": ["primary keyword", "secondary keyword"],
+    "angle": "One sentence describing the unique angle or hook"
+  }
+]`;
+
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+
+      let topics: Array<{ topic: string; content_type: string; target_keywords: string[]; angle: string }>;
+      try {
+        const match = text.match(/\[[\s\S]*\]/);
+        topics = JSON.parse(match ? match[0] : text);
+      } catch {
+        console.error(`  ✗ Failed to parse refill topics for ${site.name}`);
+        continue;
+      }
+
+      const inserts = topics.slice(0, REFILL_TARGET).map((t) => ({
+        site_id: site.id,
+        content_type: 'article' as const,
+        topic: t.topic,
+        prompt_params: {
+          content_type: t.content_type,
+          target_keywords: t.target_keywords,
+          angle: t.angle,
+        },
+        status: 'pending',
+        scheduled_for: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase.from('content_queue').insert(inserts);
+      if (error) {
+        console.error(`  ✗ Failed to insert refill topics: ${error.message}`);
+      } else {
+        console.log(`  ✓ Added ${inserts.length} new topics to queue for ${site.name}`);
+      }
+    } catch (err) {
+      console.error(`  ✗ Refill failed for ${site.name}:`, err);
+    }
+  }
 }
 
 main().catch((err) => {
