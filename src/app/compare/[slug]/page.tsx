@@ -94,6 +94,8 @@ export default async function ComparisonPage({ params }: Props) {
         <nav className="text-sm text-gray-500 mb-4">
           <Link href="/" className="hover:text-gray-700">Home</Link>
           <span className="mx-2">/</span>
+          <Link href="/compare" className="hover:text-gray-700">Comparisons</Link>
+          <span className="mx-2">/</span>
           <span className="text-gray-900">{comparison.title}</span>
         </nav>
 
