@@ -109,8 +109,8 @@ export function ArticleRenderer({ article, site }: ArticleRendererProps) {
         </ReactMarkdown>
       </div>
 
-      <FaqSection items={article.faq_items} />
       <RelatedProducts products={(article.related_products as RelatedProduct[]) || []} />
+      <FaqSection items={article.faq_items} />
     </article>
   );
 }
