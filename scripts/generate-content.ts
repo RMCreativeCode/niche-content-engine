@@ -23,6 +23,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const anthropicKey = process.env.ANTHROPIC_API_KEY!;
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '20', 10);
 const DRY_RUN = process.env.DRY_RUN === 'true';
+const AMAZON_ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG || '';
 
 if (!supabaseUrl || !supabaseKey || !anthropicKey) {
   console.error('Missing required environment variables');
@@ -54,6 +55,11 @@ interface FaqItem {
   answer: string;
 }
 
+interface RelatedProduct {
+  name: string;
+  asin: string;
+}
+
 interface GeneratedArticle {
   title: string;
   slug: string;
@@ -63,6 +69,7 @@ interface GeneratedArticle {
   content_type: string;
   schema_type: string;
   faq_items: FaqItem[];
+  related_products: RelatedProduct[];
 }
 
 function buildSystemPrompt(site: Site): string {
@@ -138,10 +145,15 @@ Respond with a JSON object (no markdown code fence around it) with these exact k
   "schema_type": "Article|HowTo|FAQPage",
   "faq_items": [
     {"question": "Full question text?", "answer": "Concise 2-4 sentence answer."}
+  ],
+  "related_products": [
+    {"name": "Brand Model Name", "asin": "B0XXXXXXXXX"}
   ]
 }
 
-The faq_items array must have 5-7 items. schema_type should be "FAQPage" whenever faq_items are present.`);
+The faq_items array must have 5-7 items. schema_type should be "FAQPage" whenever faq_items are present.
+
+For related_products: include 1-4 specific products named in the article (by brand and model number). Provide your best-estimate Amazon ASIN for each. Only include products you are reasonably confident about — omit any product if the ASIN is uncertain. ASINs are 10 characters, starting with B0 for most products. If the article mentions no specific purchasable products, return an empty array.`);
 
   return parts.join('\n\n');
 }
@@ -193,11 +205,23 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       throw new Error('Failed to parse article from Claude response');
     }
 
+    // Build affiliate URLs from ASINs
+    const relatedProducts = (article.related_products || [])
+      .filter((p) => p.asin && /^[A-Z0-9]{10}$/.test(p.asin))
+      .map((p) => ({
+        name: p.name,
+        asin: p.asin,
+        affiliate_url: AMAZON_ASSOCIATE_TAG
+          ? `https://www.amazon.com/dp/${p.asin}?tag=${AMAZON_ASSOCIATE_TAG}`
+          : `https://www.amazon.com/dp/${p.asin}`,
+      }));
+
     if (DRY_RUN) {
       console.log(`  [DRY RUN] Would write article: "${article.title}"`);
       console.log(`  Slug: ${article.slug}`);
       console.log(`  Words: ~${article.content_md.split(/\s+/).length}`);
       console.log(`  FAQ items: ${article.faq_items?.length ?? 0}`);
+      console.log(`  Related products: ${relatedProducts.length}`);
       return true;
     }
 
@@ -222,6 +246,7 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       content_type: article.content_type || 'article',
       schema_type: article.faq_items?.length ? 'FAQPage' : (article.schema_type || 'Article'),
       faq_items: article.faq_items || [],
+      related_products: relatedProducts,
       status: 'published',
       published_at: new Date().toISOString(),
       cluster_id: (item.prompt_params.cluster_id as string) || null,
@@ -255,7 +280,7 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       }).catch(() => {}); // non-fatal
     }
 
-    console.log(`  ✓ Created: "${article.title}" (${finalSlug}) — ${article.faq_items?.length ?? 0} FAQs`);
+    console.log(`  ✓ Created: "${article.title}" (${finalSlug}) — ${article.faq_items?.length ?? 0} FAQs, ${relatedProducts.length} products`);
     return true;
 
   } catch (error) {

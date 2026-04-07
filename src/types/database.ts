@@ -59,6 +59,12 @@ export interface FaqItem {
   answer: string;
 }
 
+export interface RelatedProduct {
+  name: string;
+  asin: string;
+  affiliate_url: string;
+}
+
 export interface Article {
   id: string;
   site_id: string;
@@ -67,6 +73,7 @@ export interface Article {
   title: string;
   content_md: string;
   faq_items: FaqItem[];
+  related_products: RelatedProduct[];
   meta_description: string;
   meta_keywords: string[];
   content_type: 'article' | 'comparison' | 'guide' | 'how-to' | 'listicle';
@@ -90,6 +97,8 @@ export interface Product {
   pros: string[];
   cons: string[];
   affiliate_url: string;
+  asin: string | null;
+  asin_verified: boolean;
   image_url: string | null;
   price_range: string;
   rating: number;

@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
-import { Article, FaqItem, Site } from '@/types/database';
+import { Article, FaqItem, RelatedProduct, Site } from '@/types/database';
+import { RelatedProducts } from './RelatedProducts';
 
 interface ArticleRendererProps {
   article: Article;
@@ -109,6 +110,7 @@ export function ArticleRenderer({ article, site }: ArticleRendererProps) {
       </div>
 
       <FaqSection items={article.faq_items} />
+      <RelatedProducts products={(article.related_products as RelatedProduct[]) || []} />
     </article>
   );
 }
