@@ -17,6 +17,22 @@
 
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+// Load .env.local for local development (CI sets env vars directly)
+try {
+  const envFile = readFileSync(join(process.cwd(), '.env.local'), 'utf-8');
+  for (const line of envFile.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+    if (key && !(key in process.env)) process.env[key] = val;
+  }
+} catch { /* no .env.local present, env vars expected from environment */ }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -57,7 +73,6 @@ interface FaqItem {
 
 interface RelatedProduct {
   name: string;
-  asin: string;
 }
 
 interface GeneratedArticle {
@@ -94,8 +109,8 @@ ${authorLine}
 - Keep intros short (2-3 sentences max). Hook + why it matters. Do not summarize what you're about to write.
 - Use H2 for main sections, H3 for subsections. Bold key terms and product names.
 - Mix sentence lengths deliberately: short punchy sentences for key points, longer ones for explanation.
-- Aim for 2,000-3,000 words for guides and articles, 1,500-2,000 for focused how-tos. Longer is better — thin content ranks poorly.
-- Every H2 section should be substantive: 150-300 words minimum per section. Do not write one-sentence sections.
+- Aim for 1,500-2,000 words for guides and articles, 1,000-1,500 for focused how-tos. Stay within these ranges — padding hurts readability and rankings.
+- Every H2 section should be substantive: 100-200 words minimum per section. Do not write one-sentence sections.
 
 **Markdown formatting rules:**
 - DO NOT include the article title as H1 — it's rendered separately by the page template.
@@ -147,13 +162,13 @@ Respond with a JSON object (no markdown code fence around it) with these exact k
     {"question": "Full question text?", "answer": "Concise 2-4 sentence answer."}
   ],
   "related_products": [
-    {"name": "Brand Model Name", "asin": "B0XXXXXXXXX"}
+    {"name": "Brand Model Name"}
   ]
 }
 
 The faq_items array must have 5-7 items. schema_type should be "FAQPage" whenever faq_items are present.
 
-For related_products: include 1-4 specific products named in the article (by brand and model number). Provide your best-estimate Amazon ASIN for each. Only include products you are reasonably confident about — omit any product if the ASIN is uncertain. ASINs are 10 characters, starting with B0 for most products. If the article mentions no specific purchasable products, return an empty array.`);
+For related_products: include 1-4 specific purchasable products mentioned in the article by brand and model number. If the article mentions no specific purchasable products, return an empty array.`);
 
   return parts.join('\n\n');
 }
@@ -205,16 +220,17 @@ async function processQueueItem(item: QueueItem, site: Site, runId: string): Pro
       throw new Error('Failed to parse article from Claude response');
     }
 
-    // Build affiliate URLs from ASINs
+    // Build Amazon search URLs from product names — reliable, no ASIN needed
     const relatedProducts = (article.related_products || [])
-      .filter((p) => p.asin && /^[A-Z0-9]{10}$/.test(p.asin))
-      .map((p) => ({
-        name: p.name,
-        asin: p.asin,
-        affiliate_url: AMAZON_ASSOCIATE_TAG
-          ? `https://www.amazon.com/dp/${p.asin}?tag=${AMAZON_ASSOCIATE_TAG}`
-          : `https://www.amazon.com/dp/${p.asin}`,
-      }));
+      .filter((p) => p.name?.trim())
+      .slice(0, 4)
+      .map((p) => {
+        const query = encodeURIComponent(p.name.trim());
+        const affiliate_url = AMAZON_ASSOCIATE_TAG
+          ? `https://www.amazon.com/s?k=${query}&tag=${AMAZON_ASSOCIATE_TAG}`
+          : `https://www.amazon.com/s?k=${query}`;
+        return { name: p.name.trim(), affiliate_url };
+      });
 
     if (DRY_RUN) {
       console.log(`  [DRY RUN] Would write article: "${article.title}"`);

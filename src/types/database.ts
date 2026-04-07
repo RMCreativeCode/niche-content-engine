@@ -61,8 +61,8 @@ export interface FaqItem {
 
 export interface RelatedProduct {
   name: string;
-  asin: string;
   affiliate_url: string;
+  asin?: string; // reserved for future PA API lookup
 }
 
 export interface Article {
