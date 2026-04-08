@@ -37,9 +37,21 @@ try {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const anthropicKey = process.env.ANTHROPIC_API_KEY!;
-const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '20', 10);
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '5', 10);
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const AMAZON_ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG || '';
+
+// Phase-aware per-site caps. The idea: new sites need a burst to establish
+// topical breadth in Google's index; mature sites get diminishing returns from
+// new content and benefit more from updates and backlinks.
+//
+// Phase boundaries are by published article count, not age, because article
+// count is what Google actually sees.
+const SEED_PHASE_THRESHOLD = 25;     // < 25 articles = seed phase
+const MATURE_PHASE_THRESHOLD = 100;  // 25-99 = mature, 100+ = saturated/refresh-only
+const SEED_PHASE_PER_RUN = 2;        // 2 articles per run × 3 runs/week = 6/week
+const MATURE_PHASE_PER_RUN = 1;      // 1 × 3 = 3/week
+const SATURATED_PHASE_PER_RUN = 0;   // refresh-only — handled by separate (future) script
 
 if (!supabaseUrl || !supabaseKey || !anthropicKey) {
   console.error('Missing required environment variables');
@@ -63,6 +75,7 @@ interface Site {
   name: string;
   description: string;
   slug: string;
+  domain: string;
   author_persona: string | null;
 }
 
@@ -335,24 +348,77 @@ async function main() {
 
   const startTime = Date.now();
 
-  const { data: queueItems, error: fetchError } = await supabase
-    .from('content_queue')
-    .select('*')
-    .eq('status', 'pending')
-    .lte('scheduled_for', new Date().toISOString())
-    .order('scheduled_for', { ascending: true })
-    .limit(BATCH_SIZE);
+  // Phase-aware fetching: each active site gets a cap based on how many
+  // articles it has already published. This prevents seed-phase sites from
+  // starving mature ones, and keeps mature sites from over-publishing.
+  const { data: activeSites, error: sitesFetchError } = await supabase
+    .from('sites')
+    .select('id, slug')
+    .eq('status', 'active');
 
-  if (fetchError) {
-    console.error('Failed to fetch queue:', fetchError);
+  if (sitesFetchError) {
+    console.error('Failed to fetch active sites:', sitesFetchError);
     await supabase
       .from('pipeline_runs')
-      .update({ status: 'failed', error_message: fetchError.message, completed_at: new Date().toISOString() })
+      .update({ status: 'failed', error_message: sitesFetchError.message, completed_at: new Date().toISOString() })
       .eq('id', run.id);
     process.exit(1);
   }
 
-  if (!queueItems || queueItems.length === 0) {
+  const queueItems: QueueItem[] = [];
+  const phaseLog: Array<{ slug: string; published: number; cap: number; selected: number }> = [];
+
+  for (const site of activeSites || []) {
+    // Count published articles to determine phase
+    const { count: publishedCount } = await supabase
+      .from('articles')
+      .select('id', { count: 'exact', head: true })
+      .eq('site_id', site.id)
+      .eq('status', 'published');
+
+    const published = publishedCount ?? 0;
+    let cap: number;
+    if (published < SEED_PHASE_THRESHOLD) cap = SEED_PHASE_PER_RUN;
+    else if (published < MATURE_PHASE_THRESHOLD) cap = MATURE_PHASE_PER_RUN;
+    else cap = SATURATED_PHASE_PER_RUN;
+
+    if (cap === 0) {
+      phaseLog.push({ slug: site.slug, published, cap, selected: 0 });
+      continue;
+    }
+
+    const { data: items, error: itemsError } = await supabase
+      .from('content_queue')
+      .select('*')
+      .eq('status', 'pending')
+      .eq('site_id', site.id)
+      .lte('scheduled_for', new Date().toISOString())
+      .order('scheduled_for', { ascending: true })
+      .limit(cap);
+
+    if (itemsError) {
+      console.error(`  ✗ Failed to fetch queue for ${site.slug}: ${itemsError.message}`);
+      continue;
+    }
+
+    queueItems.push(...((items || []) as QueueItem[]));
+    phaseLog.push({ slug: site.slug, published, cap, selected: items?.length ?? 0 });
+  }
+
+  // Final BATCH_SIZE ceiling — protects against runaway when many sites are added
+  const trimmedQueue = queueItems.slice(0, BATCH_SIZE);
+
+  console.log('Per-site allocation:');
+  for (const p of phaseLog) {
+    const phase = p.published < SEED_PHASE_THRESHOLD ? 'seed' : p.published < MATURE_PHASE_THRESHOLD ? 'mature' : 'saturated';
+    console.log(`  ${p.slug}: ${p.published} published (${phase}) — cap ${p.cap}, selected ${p.selected}`);
+  }
+  if (trimmedQueue.length < queueItems.length) {
+    console.log(`  ⚠ Trimmed ${queueItems.length - trimmedQueue.length} items to respect BATCH_SIZE=${BATCH_SIZE}`);
+  }
+  console.log('');
+
+  if (trimmedQueue.length === 0) {
     console.log('No pending items in queue. Exiting.');
     await supabase
       .from('pipeline_runs')
@@ -366,17 +432,17 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`Found ${queueItems.length} items to process\n`);
+  console.log(`Found ${trimmedQueue.length} items to process\n`);
 
   await supabase
     .from('pipeline_runs')
-    .update({ articles_attempted: queueItems.length })
+    .update({ articles_attempted: trimmedQueue.length })
     .eq('id', run.id);
 
-  const siteIds = [...new Set(queueItems.map((item) => item.site_id))];
+  const siteIds = [...new Set(trimmedQueue.map((item) => item.site_id))];
   const { data: sites } = await supabase
     .from('sites')
-    .select('id, name, description, slug, author_persona')
+    .select('id, name, description, slug, domain, author_persona')
     .in('id', siteIds);
 
   const siteMap = new Map((sites || []).map((s) => [s.id, s]));
@@ -384,7 +450,7 @@ async function main() {
   let succeeded = 0;
   let failed = 0;
 
-  for (const item of queueItems) {
+  for (const item of trimmedQueue) {
     const site = siteMap.get(item.site_id);
     if (!site) {
       console.error(`  ✗ Site not found for item ${item.id}`);

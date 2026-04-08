@@ -2,14 +2,15 @@ name: Content Pipeline
 
 on:
   schedule:
-    # Run every 6 hours
-    - cron: '0 */6 * * *'
+    # Mon, Wed, Fri at 14:00 UTC (10am ET) — 3x/week
+    # Per-site caps in generate-content.ts limit articles per phase
+    - cron: '0 14 * * 1,3,5'
   workflow_dispatch:
     inputs:
       batch_size:
-        description: 'Number of articles to generate'
+        description: 'Max articles to generate (overall ceiling)'
         required: false
-        default: '20'
+        default: '5'
       dry_run:
         description: 'Dry run (true/false)'
         required: false
@@ -40,6 +41,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
           AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size || '20' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '5' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: npx tsx scripts/generate-content.ts

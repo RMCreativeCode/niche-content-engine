@@ -60,7 +60,13 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!site) {
-    return new NextResponse('Site not found', { status: 404 });
+    // Don't let Vercel cache "Site not found" — otherwise newly-launched
+    // domains get stuck on a cached 404 from the brief window before the
+    // sites row exists or gets flipped to status='active'.
+    return new NextResponse('Site not found', {
+      status: 404,
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    });
   }
 
   // Inject site context into request headers for downstream server components
