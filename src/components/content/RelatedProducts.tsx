@@ -1,8 +1,4 @@
-interface RelatedProduct {
-  name: string;
-  asin: string;
-  affiliate_url: string;
-}
+import { RelatedProduct } from '@/types/database';
 
 interface RelatedProductsProps {
   products: RelatedProduct[];
@@ -15,9 +11,9 @@ export function RelatedProducts({ products }: RelatedProductsProps) {
     <div className="mt-10 border-t border-gray-100 pt-8">
       <h2 className="text-xl font-bold text-gray-900 mb-4">Products Mentioned</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {products.map((product) => (
+        {products.map((product, i) => (
           <a
-            key={product.asin}
+            key={product.asin ?? `${product.name}-${i}`}
             href={product.affiliate_url}
             target="_blank"
             rel="noopener noreferrer nofollow"
