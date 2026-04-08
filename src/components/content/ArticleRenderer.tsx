@@ -41,10 +41,45 @@ function stripMarkdownFaq(md: string): string {
   return md.replace(/\n*^##\s+Frequently Asked Questions[\s\S]*$/im, '').trimEnd();
 }
 
+/**
+ * Injects affiliate links for the first mention of each product in the article body.
+ * Skips lines that are headings or already contain a markdown link for that product.
+ */
+function injectProductLinks(md: string, products: RelatedProduct[]): string {
+  if (!products?.length) return md;
+
+  let result = md;
+  for (const product of products) {
+    if (!product.name || !product.affiliate_url) continue;
+
+    const escaped = product.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match first occurrence not already inside a markdown link (no preceding [)
+    // and not on a heading line (## ...) to avoid linking inside headings
+    const lines = result.split('\n');
+    let linked = false;
+    result = lines.map((line) => {
+      if (linked) return line;
+      if (/^#{1,6}\s/.test(line)) return line; // skip headings
+      if (line.includes(`](${product.affiliate_url})`)) return line; // already linked
+      const regex = new RegExp(`(?<!\\[)${escaped}`, 'i');
+      if (regex.test(line)) {
+        linked = true;
+        return line.replace(regex, `[${product.name}](${product.affiliate_url})`);
+      }
+      return line;
+    }).join('\n');
+  }
+  return result;
+}
+
 export function ArticleRenderer({ article, site }: ArticleRendererProps) {
-  const bodyMd = article.faq_items?.length
+  const products = (article.related_products as RelatedProduct[]) || [];
+
+  const strippedMd = article.faq_items?.length
     ? stripMarkdownFaq(article.content_md)
     : article.content_md;
+
+  const bodyMd = injectProductLinks(strippedMd, products);
 
   const makeHeadingId = (children: React.ReactNode): string => {
     const text = typeof children === 'string' ? children : String(children);
@@ -109,7 +144,7 @@ export function ArticleRenderer({ article, site }: ArticleRendererProps) {
         </ReactMarkdown>
       </div>
 
-      <RelatedProducts products={(article.related_products as RelatedProduct[]) || []} />
+      <RelatedProducts products={products} />
       <FaqSection items={article.faq_items} />
     </article>
   );
