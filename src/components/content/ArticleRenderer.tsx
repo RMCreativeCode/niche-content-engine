@@ -42,8 +42,23 @@ function stripMarkdownFaq(md: string): string {
 }
 
 /**
+ * Returns progressively shorter prefix variants of a product name to try matching.
+ * e.g. "AI Prime 16HD LED Light" → ["AI Prime 16HD LED Light", "AI Prime 16HD LED", "AI Prime 16HD"]
+ * Minimum 2 words to avoid over-matching single common words.
+ */
+function nameVariants(name: string): string[] {
+  const words = name.trim().split(/\s+/);
+  const variants: string[] = [];
+  for (let len = words.length; len >= 2; len--) {
+    variants.push(words.slice(0, len).join(' '));
+  }
+  return variants;
+}
+
+/**
  * Injects affiliate links for the first mention of each product in the article body.
- * Skips lines that are headings or already contain a markdown link for that product.
+ * Tries the full product name first, then progressively shorter prefixes.
+ * Skips heading lines and text already inside a markdown link.
  */
 function injectProductLinks(md: string, products: RelatedProduct[]): string {
   if (!products?.length) return md;
@@ -52,19 +67,23 @@ function injectProductLinks(md: string, products: RelatedProduct[]): string {
   for (const product of products) {
     if (!product.name || !product.affiliate_url) continue;
 
-    const escaped = product.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Match first occurrence not already inside a markdown link (no preceding [)
-    // and not on a heading line (## ...) to avoid linking inside headings
+    const variants = nameVariants(product.name);
     const lines = result.split('\n');
     let linked = false;
+
     result = lines.map((line) => {
       if (linked) return line;
       if (/^#{1,6}\s/.test(line)) return line; // skip headings
       if (line.includes(`](${product.affiliate_url})`)) return line; // already linked
-      const regex = new RegExp(`(?<!\\[)${escaped}`, 'i');
-      if (regex.test(line)) {
-        linked = true;
-        return line.replace(regex, `[${product.name}](${product.affiliate_url})`);
+
+      for (const variant of variants) {
+        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(?<!\\[)${escaped}`, 'i');
+        if (regex.test(line)) {
+          linked = true;
+          // Use the matched variant as link text so article reads naturally
+          return line.replace(regex, `[${variant}](${product.affiliate_url})`);
+        }
       }
       return line;
     }).join('\n');
