@@ -335,6 +335,30 @@ async function main() {
   console.log(`\n🚀 Content Pipeline — ${new Date().toISOString()}`);
   console.log(`Batch size: ${BATCH_SIZE} | Dry run: ${DRY_RUN}\n`);
 
+  // Credit-floor preflight: make a 1-token API call to check for billing errors
+  console.log('Checking API credits...');
+  try {
+    const preflightResponse = await anthropic.messages.create({
+      model: 'claude-opus-4-1-20250805',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'ping' }],
+    });
+    console.log('✓ API credit check passed\n');
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    const errorMsg = err.message;
+
+    // Check for billing error (HTTP 402 or similar)
+    if (errorMsg.includes('402') || errorMsg.includes('billing') || errorMsg.includes('credit')) {
+      console.error('❌ Billing error detected:', errorMsg);
+      console.error('Pipeline failed clean exit due to insufficient credits.');
+      process.exit(1);
+    }
+
+    // Re-throw other API errors
+    throw error;
+  }
+
   const { data: run, error: runError } = await supabase
     .from('pipeline_runs')
     .insert({ status: 'running' })
@@ -450,39 +474,42 @@ async function main() {
   let succeeded = 0;
   let failed = 0;
 
-  for (const item of trimmedQueue) {
-    const site = siteMap.get(item.site_id);
-    if (!site) {
-      console.error(`  ✗ Site not found for item ${item.id}`);
-      failed++;
-      continue;
+  try {
+    for (const item of trimmedQueue) {
+      const site = siteMap.get(item.site_id);
+      if (!site) {
+        console.error(`  ✗ Site not found for item ${item.id}`);
+        failed++;
+        continue;
+      }
+
+      const success = await processQueueItem(item as QueueItem, site as Site, run.id);
+      if (success) succeeded++;
+      else failed++;
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    const success = await processQueueItem(item as QueueItem, site as Site, run.id);
-    if (success) succeeded++;
-    else failed++;
+    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await supabase
+      .from('pipeline_runs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        articles_succeeded: succeeded,
+        articles_failed: failed,
+        duration_seconds: durationSeconds,
+      })
+      .eq('id', run.id);
+
+    console.log(`\n✅ Pipeline complete: ${succeeded} succeeded, ${failed} failed (${durationSeconds}s)`);
+  } finally {
+    // Auto-refill: for any active site with fewer than MIN_QUEUE_DEPTH pending items,
+    // ask Claude to generate new topics based on what's already been written.
+    // This runs regardless of whether the batch succeeded or had errors.
+    await refillQueues();
   }
-
-  const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-
-  await supabase
-    .from('pipeline_runs')
-    .update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      articles_succeeded: succeeded,
-      articles_failed: failed,
-      duration_seconds: durationSeconds,
-    })
-    .eq('id', run.id);
-
-  console.log(`\n✅ Pipeline complete: ${succeeded} succeeded, ${failed} failed (${durationSeconds}s)`);
-
-  // Auto-refill: for any active site with fewer than MIN_QUEUE_DEPTH pending items,
-  // ask Claude to generate new topics based on what's already been written.
-  await refillQueues();
 }
 
 const MIN_QUEUE_DEPTH = 5;   // refill when a site drops below this
