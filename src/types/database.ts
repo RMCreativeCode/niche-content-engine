@@ -40,7 +40,8 @@ export interface AffiliateProgram {
 }
 
 export interface AnalyticsConfig {
-  plausibleDomain?: string;
+  /** GA4 Measurement ID for this site, e.g. "G-XXXXXXXXXX". One property per site. */
+  ga4MeasurementId?: string;
   searchConsoleId?: string;
 }
 

@@ -20,8 +20,14 @@ export default async function PrivacyPage() {
 
         <h2>Analytics</h2>
         <p>
-          We may use privacy-friendly analytics to understand how visitors use our site (pages visited,
-          time on site). This data is aggregated and never tied to individual users.
+          {site.name} uses Google Analytics to understand how visitors use our site (pages visited,
+          time on site, approximate location, and device type). Google Analytics sets cookies and
+          processes this data on our behalf; it may also be used by Google in accordance with its own
+          privacy policy. We use this data only in aggregate to improve our content. You can opt out
+          using the{' '}
+          <a href="https://tools.google.com/dlpage/gaoptout" className="underline" style={{ color: 'var(--color-primary)' }}>
+            Google Analytics Opt-out Browser Add-on
+          </a>.
         </p>
 
         <h2>Affiliate Links</h2>
@@ -36,8 +42,8 @@ export default async function PrivacyPage() {
 
         <h2>Cookies</h2>
         <p>
-          We use only essential cookies necessary for the site to function. We do not use tracking
-          cookies or advertising cookies.
+          We use cookies necessary for the site to function, plus analytics cookies set by Google
+          Analytics to measure site usage (described above). We do not use advertising cookies.
         </p>
 
         <h2>Third-Party Services</h2>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { GoogleAnalytics } from '@next/third-parties/google';
 import { getCurrentSite, getSiteThemeVars } from '@/lib/site-context';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
@@ -58,15 +59,6 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <head>
-        {analytics?.plausibleDomain && (
-          <script
-            defer
-            data-domain={analytics.plausibleDomain}
-            src="https://plausible.io/js/script.js"
-          />
-        )}
-      </head>
       <body
         className="min-h-screen flex flex-col bg-white text-gray-900"
         style={themeVars as React.CSSProperties}
@@ -75,6 +67,9 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         <SiteFooter site={site} />
       </body>
+      {analytics?.ga4MeasurementId && (
+        <GoogleAnalytics gaId={analytics.ga4MeasurementId} />
+      )}
     </html>
   );
 }

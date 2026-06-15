@@ -51,7 +51,7 @@ async function seed() {
       ],
     },
     analytics_config: {
-      plausibleDomain: 'nanoreefguide.com',
+      // Set per-site GA4 Measurement ID (G-XXXXXXXXXX) in Supabase after creating the property.
       searchConsoleId: null,
     },
     status: 'active',
@@ -649,7 +649,7 @@ The AI Prime 16HD isn't flashy or revolutionary — it's just the most reliable,
       ],
     },
     analytics_config: {
-      plausibleDomain: 'proteinskimmercompare.com',
+      // Set per-site GA4 Measurement ID (G-XXXXXXXXXX) in Supabase after creating the property.
     },
     status: 'active',
   }).select('id').single();
